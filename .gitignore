@@ -1,0 +1,14 @@
+<CodeBlock language="gitignore" editable>
+# Godot-generated cache
+.godot/
+
+Temporary files
+*.tmp
+*.bak
+Local development files
+.vscode/settings.json
+Local save data or credentials
+.save
+.env
+.env.
+</CodeBlock>
