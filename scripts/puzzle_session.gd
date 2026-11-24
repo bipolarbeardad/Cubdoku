@@ -6,6 +6,7 @@ const Save := preload("res://scripts/campaign_save.gd")
 const GameState := preload("res://scripts/puzzle_game_state.gd")
 const Generator := preload("res://scripts/puzzle_generator.gd")
 const Validator := preload("res://scripts/puzzle_validator.gd")
+const Difficulty := preload("res://scripts/puzzle_difficulty.gd")
 
 enum Mode { CAMPAIGN_PATH, FREE_PLAY }
 
@@ -16,6 +17,7 @@ var _path: String
 var _profile: Dictionary
 var _mode := Mode.CAMPAIGN_PATH
 var _definition := {}
+var _suspended_campaign := {}
 var _generator := Generator.new()
 var _rng := RandomNumberGenerator.new()
 
@@ -39,6 +41,8 @@ func definition_snapshot() -> Dictionary:
 	if not snapshot.is_empty():
 		snapshot.regions = _definition.regions.duplicate()
 		snapshot.solution = _definition.solution.duplicate()
+		if snapshot.has("locked_bears"):
+			snapshot.locked_bears = _definition.locked_bears.duplicate()
 	return snapshot
 
 
@@ -61,23 +65,43 @@ func attempt_summary() -> Dictionary:
 
 
 func load_campaign() -> bool:
+	if _mode == Mode.FREE_PLAY and not _suspended_campaign.is_empty():
+		game = _suspended_campaign.game
+		_definition = _suspended_campaign.definition
+		elapsed = _suspended_campaign.elapsed
+		save_error = _suspended_campaign.save_error
+		_mode = Mode.CAMPAIGN_PATH
+		_suspended_campaign.clear()
+		return true
 	if _mode == Mode.CAMPAIGN_PATH and not _definition.is_empty():
 		return true
 	return _load_campaign_level(campaign_number())
 
 
-func load_free_play() -> bool:
-	if not flush_attempt():
+func load_free_play(size: int = Validator.SIZE) -> bool:
+	if not Difficulty.is_size_eligible(Difficulty.BASE, size):
 		return false
-	var regions := _generator.generate(_rng.randi())
-	if not game.load_puzzle(regions):
-		return false
-	_definition = {
-		"size": Validator.SIZE,
-		"difficulty": "BASE",
+	var regions := _generator.generate(_rng.randi(), Generator.DEFAULT_ATTEMPTS, Difficulty.BASE, size)
+	return install_free_play({
+		"size": size,
+		"difficulty": Difficulty.BASE,
 		"regions": regions,
-		"solution": game.solution_snapshot(),
-	}
+		"solution": PackedInt32Array(),
+	})
+
+
+## The provisioning service has already checked the difficulty gate.
+func install_free_play(definition: Dictionary) -> bool:
+	if definition.has("error"):
+		return false
+	var next_game := GameState.new()
+	if not next_game.load_puzzle(definition.regions, definition.solution):
+		return false
+	if _mode == Mode.CAMPAIGN_PATH and not _definition.is_empty():
+		_suspended_campaign = {"game": game, "definition": _definition, "elapsed": elapsed, "save_error": save_error}
+	game = next_game
+	_definition = definition.duplicate(true)
+	_definition.solution = game.solution_snapshot()
 	elapsed = 0.0
 	_mode = Mode.FREE_PLAY
 	save_error = false
@@ -157,7 +181,7 @@ func _load_campaign_level(number: int) -> bool:
 			return false
 		next_elapsed = attempt.elapsed
 	else:
-		var regions := _generator.generate(_rng.randi())
+		var regions := _generator.generate(_rng.randi(), Generator.DEFAULT_ATTEMPTS, level.difficulty)
 		if not next_game.load_puzzle(regions):
 			return false
 		var random_id := Crypto.new().generate_random_bytes(16)
@@ -201,6 +225,7 @@ func _load_campaign_level(number: int) -> bool:
 func _load_assignment(target: RefCounted, definition: Dictionary, level_id: String) -> bool:
 	var regions: Variant = definition.get("regions")
 	var solution: Variant = definition.get("solution")
+	var locked_bears: Variant = definition.get("locked_bears", PackedInt32Array())
 	return (
 		definition.get("level_id") == level_id
 		and definition.get("id") is String
@@ -209,7 +234,8 @@ func _load_assignment(target: RefCounted, definition: Dictionary, level_id: Stri
 		and regions is PackedInt32Array
 		and solution is PackedInt32Array
 		and solution.size() == Validator.SIZE
-		and target.load_puzzle(regions, solution)
+		and locked_bears is PackedInt32Array
+		and target.load_puzzle(regions, solution, locked_bears)
 	)
 
 

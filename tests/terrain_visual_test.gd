@@ -1,5 +1,5 @@
 extends CenterContainer
-## Run the scene directly to inspect all seven materials on one board.
+## Run with --ten-materials to include the three additional placeholders.
 
 const BoardTerrain := preload("res://scripts/board_terrain.gd")
 const SIDE := 7
@@ -14,13 +14,23 @@ const REGIONS := [
 ]
 
 
+var _fixture_side := SIDE
+var _fixture_regions := PackedInt32Array(REGIONS)
+
+
 func _ready() -> void:
 	get_window().title = "Cubdoku · Terrain test"
-	get_window().content_scale_size = Vector2i(680, 660)
+	if "--ten-materials" in OS.get_cmdline_user_args():
+		_fixture_side = 10
+		_fixture_regions.clear()
+		for region in _fixture_side:
+			for column in _fixture_side:
+				_fixture_regions.append(region)
+	get_window().content_scale_size = Vector2i(900, 900) if _fixture_side == 10 else Vector2i(680, 660)
 	get_window().size = get_window().content_scale_size
 	var board := BoardTerrain.new()
 	add_child(board)
-	board.set_board(SIDE, PackedInt32Array(REGIONS))
+	board.set_board(_fixture_side, _fixture_regions)
 	if "--capture" in OS.get_cmdline_user_args():
 		await get_tree().process_frame
 		await RenderingServer.frame_post_draw
@@ -35,9 +45,9 @@ func _ready() -> void:
 
 func _verify_pixels(image: Image, board: BoardTerrain) -> bool:
 	var origin := Vector2i(board.get_global_transform_with_canvas().origin)
-	var span := SIDE * BoardTerrain.CELL_SIZE
+	var span := _fixture_side * BoardTerrain.CELL_SIZE
 	var samples: Array[Image] = []
-	for material in SIDE:
+	for material in _fixture_side:
 		var atlas := board.terrain_layer.tile_set.get_source(material) as TileSetAtlasSource
 		samples.append(atlas.texture.get_image())
 
@@ -52,10 +62,10 @@ func _verify_pixels(image: Image, board: BoardTerrain) -> bool:
 	]
 	var outer := BoardTerrain.REGION_WIDTH
 	var interior := Rect2i(outer, outer, span - 2 * outer, span - 2 * outer)
-	for y in SIDE:
-		for x in SIDE:
+	for y in _fixture_side:
+		for x in _fixture_side:
 			var cell_origin := Vector2i(x, y) * cell_size
-			var id: int = REGIONS[y * SIDE + x]
+			var id: int = _fixture_regions[y * _fixture_side + x]
 			for offset in offsets:
 				var point: Vector2i = cell_origin + offset
 				if not interior.has_point(point):
@@ -63,9 +73,9 @@ func _verify_pixels(image: Image, board: BoardTerrain) -> bool:
 				if not _matches(image.get_pixelv(origin + point), samples[id].get_pixelv(point)):
 					push_error("Terrain surface mismatch at %s" % point)
 					return false
-			if x > 0 and not _verify_border(image, origin, cell_origin + Vector2i(0, middle), id, y * SIDE + x - 1, samples):
+			if x > 0 and not _verify_border(image, origin, cell_origin + Vector2i(0, middle), id, y * _fixture_side + x - 1, samples):
 				return false
-			if y > 0 and not _verify_border(image, origin, cell_origin + Vector2i(middle, 0), id, (y - 1) * SIDE + x, samples):
+			if y > 0 and not _verify_border(image, origin, cell_origin + Vector2i(middle, 0), id, (y - 1) * _fixture_side + x, samples):
 				return false
 	var center := span >> 1
 	for offset in [Vector2i(center, 0), Vector2i(0, center), Vector2i(center, span - 1), Vector2i(span - 1, center)]:
@@ -77,7 +87,7 @@ func _verify_pixels(image: Image, board: BoardTerrain) -> bool:
 
 func _verify_border(image: Image, origin: Vector2i, point: Vector2i, id: int, neighbor: int, samples: Array[Image]) -> bool:
 	var expected := Color.BLACK
-	if id == REGIONS[neighbor]:
+	if id == _fixture_regions[neighbor]:
 		expected = samples[id].get_pixelv(point).blend(BoardTerrain.GRID_COLOR)
 	if _matches(image.get_pixelv(origin + point), expected):
 		return true

@@ -3,13 +3,14 @@ extends RefCounted
 ## the same square dimensions, with one continuous view of the material.
 
 const CELL_SIZE := 84
-const BOARD_CAPACITY := 7
+const BOARD_CAPACITY := 10
 const SHEET_SIZE := CELL_SIZE * BOARD_CAPACITY
 const SAMPLE_SIZE := int(SHEET_SIZE * 0.5)
-const MATERIALS := ["Grass", "Wood", "Stone", "Dirt", "Mud", "Gravel", "Forest Floor"]
+const MATERIALS := ["Grass", "Wood", "Stone", "Dirt", "Mud", "Gravel", "Forest Floor", "Water", "Sand", "Moss"]
 const BASE_COLORS := [
 	Color("#416831"), Color("#96633a"), Color("#536271"), Color("#80503b"),
 	Color("#47403d"), Color("#827a6b"), Color("#564b31"),
+	Color("#26749d"), Color("#c9a255"), Color("#3b8070"),
 ]
 
 
@@ -31,6 +32,11 @@ static func make_texture(material: int) -> Texture2D:
 				var pooling := noise.get_noise_2d(x * 0.48, y * 0.68)
 				variation += smoothstep(0.03, 0.34, pooling) * 0.12
 				variation += sin(y * 0.18 + pooling * 11.0) * smoothstep(0.12, 0.5, pooling) * 0.05
+			elif material == 7:
+				var wave := sin(y * 0.38 + 3.0 * sin(x * 0.052) + noise.get_noise_2d(x, y) * 2.0)
+				variation += maxf(wave, 0.0) ** 6 * 0.25
+			elif material == 8:
+				variation += rng.randf_range(-0.14, 0.09)
 			image.set_pixel(x, y, _shade(BASE_COLORS[material], variation))
 
 	match material:
@@ -54,6 +60,8 @@ static func make_texture(material: int) -> Texture2D:
 				_oval(image, point, radii, angle, color)
 				var axis := Vector2.from_angle(angle) * radii.x * 0.8
 				_stroke(image, point - axis, point + axis, color.darkened(0.28))
+		9:
+			_scatter(image, rng, 9, Vector2(5.4, 4.8), Color("#69a58c"), 0.23)
 	image.resize(SHEET_SIZE, SHEET_SIZE, Image.INTERPOLATE_BILINEAR)
 	return ImageTexture.create_from_image(image)
 
